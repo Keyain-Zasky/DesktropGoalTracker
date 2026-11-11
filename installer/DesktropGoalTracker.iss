@@ -1,5 +1,5 @@
 #define AppName "DesktropGoalTracker"
-#define AppVersion "0.1.0"
+#define AppVersion "0.1.1"
 #define AppExe "DesktropGoalTracker.exe"
 
 [Setup]
@@ -15,7 +15,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0
 OutputDir=..\dist
-OutputBaseFilename=DesktropGoalTracker-Setup-0.1.0
+OutputBaseFilename=DesktropGoalTracker-Setup-0.1.1
 SetupIconFile=..\sysadmin-codex\widget\app-icon.ico
 UninstallDisplayIcon={app}\{#AppExe}
 Compression=lzma2/fast

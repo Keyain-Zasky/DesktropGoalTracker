@@ -20,7 +20,7 @@ TRAINING_ACTIVE = HERE / 'sessione-attiva.json'
 
 DEFAULTS = {
     'version': 1, 'selected': 'training',
-    'goals': [{'id': 'training', 'name': 'Formazione Linux', 'kind': 'timer', 'weekly_target': 420}],
+    'goals': [{'id': 'training', 'name': 'Il mio obiettivo', 'kind': 'timer', 'weekly_target': 60}],
     'appearance': {'scale_percent': 100, 'opacity_percent': 100, 'accent': '#ffae85'},
     'github': {'enabled': False, 'username': '', 'year_mode': 'personal'},
     'integrations': {},
@@ -158,7 +158,7 @@ def toggle_timer(goal_id):
 
 def toggle_check(goal_id, day=None):
     if goal_id == 'training':
-        raise ValueError('La formazione è un cronometro.')
+        raise ValueError('Questo obiettivo è un cronometro.')
     with transaction_lock(ENTRIES):
         data = read(ENTRIES, {'goals': {}})
         days = data.setdefault('goals', {}).setdefault(goal_id, {'days': {}}).setdefault('days', {})

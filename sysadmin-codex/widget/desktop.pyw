@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from ctypes import wintypes as wt
 sys.path.insert(0, str(Path(__file__).resolve().parent / 'vendor'))
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 import model
 import providers
 import credentials
@@ -124,24 +124,26 @@ class RefreshController:
         return True
 
 
-def shade(seconds, kind='timer'):
+def shade(seconds, kind='timer', theme='dark'):
     if kind == 'check':
         seconds = 3600 if seconds else 0
     if seconds <= 0:
-        return (43, 57, 73, 82)
+        return (210, 220, 228, 255) if theme == 'light' else (43, 57, 73, 255)
     if seconds < 1800:
-        return (177, 100, 83, 98)
+        return (177, 100, 83, 255)
     if seconds < 3600:
-        return (222, 125, 93, 108)
+        return (222, 125, 93, 255)
     if seconds < 7200:
-        return (255, 164, 119, 120)
-    return (255, 210, 170, 132)
+        return (255, 164, 119, 255)
+    return (255, 210, 170, 255)
 
 
 def create_image(today=None, config_override=None):
     today = today or dt.date.today()
     cfg = config_override or model.config()
     goal = model.selected_goal(cfg)
+    ap = cfg.get('appearance', {})
+    theme = ap.get('theme', 'dark')
     kind = goal['kind']
     source = cfg.get('annual_source', cfg.get('github', {}).get('year_mode', 'personal'))
     external = (providers.external_cached(source, today.year, cfg.get('integrations', {}).get(source, {}))
@@ -172,7 +174,7 @@ def create_image(today=None, config_override=None):
             draw.rounded_rectangle(box((x, y, x+27, y+27)), radius=round(27*.23*SCALE), fill=color)
 
         if source_left <= 350 and source_right >= 30:
-            draw.arc(box((30, 65, 350, 385)), 0, 359.9, fill=(70, 88, 105, 88), width=22*SCALE)
+            draw.arc(box((30, 65, 350, 385)), 0, 359.9, fill=(210, 220, 228, 255) if theme == 'light' else (70, 88, 105, 255), width=22*SCALE)
             if progress > 0:
                 start, end = -90, -90 + 359.9*progress
                 steps = max(2, round(progress*360))
@@ -181,14 +183,14 @@ def create_image(today=None, config_override=None):
                     angle = math.radians(start + (end-start)*step/steps)
                     points.append((round((190+149*math.cos(angle)-source_left)*SCALE),
                                    round((225+149*math.sin(angle))*SCALE)))
-                draw.line(points, fill=(255, 174, 133, 125), width=22*SCALE, joint='curve')
+                draw.line(points, fill=(255, 174, 133, 255), width=22*SCALE, joint='curve')
                 for x, y in (points[0], points[-1]):
                     radius = 11*SCALE
-                    draw.ellipse((x-radius, y-radius, x+radius, y+radius), fill=(255, 174, 133, 125))
+                    draw.ellipse((x-radius, y-radius, x+radius, y+radius), fill=(255, 174, 133, 255))
         for row, week in enumerate(calendar.Calendar(0).monthdatescalendar(today.year, today.month)):
             for col, day in enumerate(week):
                 if day.month == today.month:
-                    tile(415 + col*36, 116 + row*36, shade(values.get(day.isoformat(), 0), kind))
+                    tile(415 + col*36, 116 + row*36, shade(values.get(day.isoformat(), 0), kind, theme))
         git = cfg.get('github', {})
         cache = providers.github_cached(git.get('username', ''), today.year) if git.get('enabled') and source == 'github' else None
         git_values = cache['levels'] if cache else None
@@ -203,11 +205,10 @@ def create_image(today=None, config_override=None):
                 count = external['counts'].get(day.isoformat(), 0) if external else 0
                 value = 0 if count == 0 else 900 if count == 1 else 2700 if count <= 3 else 5400 if count <= 6 else 9000
             tile(710 + ((day-origin).days // 7)*36, 116 + day.weekday()*36,
-                 shade(value, 'timer' if source != 'personal' else kind))
+                 shade(value, 'timer' if source != 'personal' else kind, theme))
             day += dt.timedelta(days=1)
         resized = image.resize((source_right-source_left, HEIGHT), Image.Resampling.LANCZOS)
         result.paste(resized.crop((left-source_left, 0, right-source_left, HEIGHT)), (left, 0))
-    ap = cfg.get('appearance', {})
     accent = ap.get('accent', '#ffae85')
     if accent.lower() != '#ffae85':
         rgb = tuple(int(accent[i:i+2], 16) for i in (1, 3, 5))
@@ -219,15 +220,23 @@ def create_image(today=None, config_override=None):
                 if a and r > g_ * 1.10 and r > b * 1.10:
                     ratio = r / 255
                     pixels[xx, yy] = (int(rgb[0]*ratio), int(rgb[1]*ratio), int(rgb[2]*ratio), a)
-    opacity = max(20, min(150, int(ap.get('opacity_percent', 100)))) / 100
-    if opacity != 1:
-        result.putalpha(result.getchannel('A').point(lambda a: min(255, round(a*opacity))))
+    if ap.get('shadow_enabled', False):
+        shadow = Image.new('RGBA', result.size, (0, 0, 0, 0))
+        blurred = result.getchannel('A').filter(ImageFilter.GaussianBlur(9)).point(lambda a: round(a * 0.45))
+        shadow.paste((0, 0, 0, 0), (0, 0, *result.size))
+        shadow.putalpha(blurred)
+        shifted = Image.new('RGBA', result.size, (0, 0, 0, 0))
+        shifted.paste(shadow, (6, 7))
+        result = Image.alpha_composite(shifted, result)
+    opacity = max(0, min(100, int(ap.get('opacity_percent', 100)))) / 100
     percent = max(50, min(140, int(ap.get('scale_percent', 100))))
     if percent != 100:
         result = result.resize((round(WIDTH*percent/100), round(HEIGHT*percent/100)), Image.Resampling.LANCZOS)
     angle = max(-180, min(180, int(ap.get('rotation_degrees', 0))))
     if angle:
         result = result.rotate(-angle, resample=Image.Resampling.BICUBIC, expand=True)
+    if opacity != 1:
+        result.putalpha(result.getchannel('A').point(lambda a: round(a * opacity)))
     return result
 
 

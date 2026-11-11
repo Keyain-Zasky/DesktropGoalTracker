@@ -46,6 +46,9 @@ class LauncherTests(unittest.TestCase):
         self.win.offset_x.setValue(125)
         self.win.monitor_combo.setCurrentIndex(1)
         self.win.manual.setChecked(False)
+        self.win.opacity_slider.setValue(55)
+        self.win.theme_combo.setCurrentIndex(1)
+        self.win.shadow_check.setChecked(True)
         self.assertEqual(model.config()['appearance'], before)
         # Salvataggi in altre sezioni non devono includere l'anteprima.
         self.win.update_config({'selected': 'training'}, 'ok')
@@ -60,6 +63,9 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(actual['offset_x'], 125)
         self.assertEqual(actual['monitor'], 'display-2')
         self.assertFalse(actual['manual_timer_enabled'])
+        self.assertEqual(actual['opacity_percent'], 55)
+        self.assertEqual(actual['theme'], 'light')
+        self.assertTrue(actual['shadow_enabled'])
 
     def test_discard_restores_draft_without_writing(self):
         before = model.config()['appearance'].copy()
@@ -152,6 +158,25 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(results, [(80,40)])
         self.win.position_from_drag(*results[0])
         self.assertEqual((self.win.offset_x.value(), self.win.offset_y.value()), (80,40))
+        self.assertEqual(model.config()['appearance'], original)
+
+    def test_mouse_editor_moves_resizes_and_confirms_draft(self):
+        original = model.config()['appearance'].copy()
+        screen = self.app.primaryScreen(); rect = screen.geometry()
+        image = QImage(200, 80, QImage.Format.Format_ARGB32); image.fill(Qt.GlobalColor.white)
+        overlay = selection.DesktopSelection(screen, 'edit', (0, 0, rect.width(), rect.height()), {'scale_percent': 100}, image)
+        results = []; overlay.edit_chosen.connect(lambda *v: results.append(v))
+        overlay.show(); self.app.processEvents()
+        start = overlay.ghost_rect().center().toPoint(); end = start + QPoint(45, 20)
+        QTest.mousePress(overlay, Qt.MouseButton.LeftButton, pos=start)
+        QTest.mouseMove(overlay, end); QTest.mouseRelease(overlay, Qt.MouseButton.LeftButton, pos=end)
+        corner = overlay.ghost_rect().bottomRight().toPoint()
+        QTest.mousePress(overlay, Qt.MouseButton.LeftButton, pos=corner)
+        QTest.mouseMove(overlay, corner + QPoint(30, 12)); QTest.mouseRelease(overlay, Qt.MouseButton.LeftButton, pos=corner + QPoint(30, 12))
+        QTest.keyClick(overlay, Qt.Key.Key_Return)
+        self.assertEqual(len(results), 1); self.assertEqual(results[0][:2], (45,20))
+        self.assertGreater(results[0][2], 100)
+        self.win.appearance_from_editor(*results[0])
         self.assertEqual(model.config()['appearance'], original)
 
     def test_multiple_presets_do_not_apply_until_button(self):

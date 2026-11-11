@@ -30,7 +30,7 @@ BASE = paths.RESOURCES
 PRESETS = model.HERE / 'preset-aspetto.json'
 DEFAULT_APPEARANCE = {'scale_percent': 100, 'opacity_percent': 100, 'accent': '#ffae85',
                       'rotation_degrees': 0, 'offset_x': 0, 'offset_y': 0,
-                      'monitor': '', 'manual_timer_enabled': True}
+                      'monitor': '', 'manual_timer_enabled': True, 'theme': 'dark', 'shadow_enabled': False}
 
 STYLE = """
 QWidget { background:#101923; color:#e9eef2; font-family:'Segoe UI'; font-size:13px; }
@@ -147,9 +147,18 @@ class Preview(QWidget):
         scale = min(self.width()/820, self.height()/270) * self.appearance.get('scale_percent', 100)/100
         painter.scale(scale, scale)
         factor = self.appearance.get('opacity_percent', 100)/100
-        muted = QColor(96, 116, 129, min(255, round(115*factor)))
+        muted = QColor(*( (210, 220, 228) if self.appearance.get('theme') == 'light' else (70, 88, 105) ), min(255, round(255*factor)))
         accent = QColor(self.appearance.get('accent', '#ffae85'))
-        accent.setAlpha(min(255, round(175*factor)))
+        accent.setAlpha(min(255, round(255*factor)))
+        if self.appearance.get('shadow_enabled', False):
+            painter.save(); painter.translate(4, 5)
+            shade = QColor(0, 0, 0, round(100 * factor))
+            painter.setBrush(Qt.BrushStyle.NoBrush); painter.setPen(QPen(shade, 14))
+            painter.drawEllipse(QRectF(-310, -58, 116, 116))
+            painter.setPen(Qt.PenStyle.NoPen); painter.setBrush(shade)
+            for col in range(24):
+                for row in range(7): painter.drawRoundedRect(QRectF(-156+col*19, -62+row*19, 14, 14), 3, 3)
+            painter.restore()
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(muted, 9, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
         painter.drawEllipse(QRectF(-310, -58, 116, 116))
@@ -221,6 +230,7 @@ class Launcher(QMainWindow):
         self.cfg = model.config()
         self.jobs = set()
         self.draft = {**DEFAULT_APPEARANCE, **self.cfg.get('appearance', {})}
+        self.draft['opacity_percent'] = max(0, min(100, int(self.draft['opacity_percent'])))
         self.applied = dict(self.draft)
         self.build()
 
@@ -243,6 +253,9 @@ class Launcher(QMainWindow):
             nav.clicked.connect(lambda _checked=False, i=index: self.navigate(i))
             side.addWidget(nav); self.nav.append(nav)
         side.addStretch(1)
+        coffee = QLabel('<a href="https://buymeacoffee.com/keyain" style="color:#a4b5c2; text-decoration:none;">☕ Buy Me a Coffee</a>')
+        coffee.setOpenExternalLinks(True); coffee.setToolTip('Apri Buy Me a Coffee nel browser')
+        side.addWidget(coffee)
         side.addWidget(label('I dati personali rimangono\nsu questo PC.', 'muted'))
         row.addWidget(sidebar)
         content = QWidget()
@@ -345,7 +358,7 @@ class Launcher(QMainWindow):
         goal = self.selected_goal()
         if not goal: return
         if goal['id'] == 'training':
-            QMessageBox.information(self, 'Formazione Linux', 'L’obiettivo della formazione viene conservato.'); return
+            QMessageBox.information(self, 'Obiettivo predefinito', 'L’obiettivo predefinito viene conservato.'); return
         if model.active(goal['id']):
             QMessageBox.information(self, 'Cronometro attivo', 'Ferma il cronometro prima di rimuovere questo obiettivo.'); return
         if QMessageBox.question(self, 'Rimuovere l’obiettivo?', 'L’obiettivo sarà rimosso dalla lista. Lo storico locale rimarrà conservato.') != QMessageBox.StandardButton.Yes: return
@@ -399,7 +412,17 @@ class Launcher(QMainWindow):
         panel, body = card()
         body.addWidget(label('Personalizza il desktop', 'section'))
         self.size_slider = self.make_slider('Dimensione', 'scale_percent', 50, 140, '%', body)
-        self.opacity_slider = self.make_slider('Intensità e trasparenza', 'opacity_percent', 20, 150, '%', body)
+        self.opacity_slider = self.make_slider('Opacità', 'opacity_percent', 0, 100, '%', body)
+        body.addWidget(label('0% invisibile · 100% completamente opaco', 'muted'))
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem('Scuro', 'dark'); self.theme_combo.addItem('Chiaro', 'light')
+        self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(self.draft.get('theme', 'dark'))))
+        self.theme_combo.currentIndexChanged.connect(lambda: self.change_draft('theme', self.theme_combo.currentData()))
+        body.addWidget(label('Tema del widget', 'muted')); body.addWidget(self.theme_combo)
+        self.shadow_check = QCheckBox('Abilita ombreggiatura')
+        self.shadow_check.setChecked(self.draft.get('shadow_enabled', False))
+        self.shadow_check.toggled.connect(lambda value: self.change_draft('shadow_enabled', value))
+        body.addWidget(self.shadow_check)
         self.rotation_slider = self.make_slider('Inclinazione', 'rotation_degrees', -180, 180, '°', body)
         angle_row = QVBoxLayout()
         angle_row.addWidget(button('Scegli due punti · Sperimentale', self.select_angle))
@@ -431,8 +454,8 @@ class Launcher(QMainWindow):
         body.addLayout(settings)
         body.addWidget(label('Gli spostamenti sono relativi al centro dello schermo: X positivo va a destra, Y positivo verso il basso.', 'muted', True))
         drag_row = QVBoxLayout()
-        drag_row.addWidget(button('Trascina anteprima · Sperimentale', self.drag_preview))
-        drag_row.addWidget(label('Il clic si sblocca solo durante il trascinamento.', 'muted', True))
+        drag_row.addWidget(button('Trascina e modifica · Sperimentale', self.drag_preview))
+        drag_row.addWidget(label('Trascina per spostare, usa le maniglie per dimensione e inclinazione; il centro si allinea automaticamente.', 'muted', True))
         body.addLayout(drag_row)
         self.manual = QCheckBox('Abilita il timer manuale nel cerchio')
         self.manual.setChecked(self.draft.get('manual_timer_enabled', True))
@@ -494,6 +517,8 @@ class Launcher(QMainWindow):
             if key in self.slider_value_labels:
                 text_label, suffix = self.slider_value_labels[key]
                 text_label.setText(f'{control.value()}{suffix}')
+        self.theme_combo.blockSignals(True); self.theme_combo.setCurrentIndex(max(0, self.theme_combo.findData(self.draft.get('theme', 'dark')))); self.theme_combo.blockSignals(False)
+        self.shadow_check.blockSignals(True); self.shadow_check.setChecked(self.draft.get('shadow_enabled', False)); self.shadow_check.blockSignals(False)
         self.manual.blockSignals(True); self.manual.setChecked(self.draft['manual_timer_enabled']); self.manual.blockSignals(False)
         index = self.monitor_combo.findData(self.draft['monitor'])
         if index < 0:
@@ -516,6 +541,7 @@ class Launcher(QMainWindow):
             self.selection_overlay = overlay
             overlay.angle_chosen.connect(self.angle_from_points)
             overlay.position_chosen.connect(self.position_from_drag)
+            overlay.edit_chosen.connect(self.appearance_from_editor)
             overlay.finished.connect(self.selection_finished)
             self.hide()
             overlay.show_selection()
@@ -538,7 +564,7 @@ class Launcher(QMainWindow):
             buffer = io.BytesIO(); image.save(buffer, format='PNG')
             ghost = QImage.fromData(buffer.getvalue(), 'PNG')
             if ghost.isNull(): raise ValueError('Impossibile creare l’anteprima del widget.')
-            self.begin_selection('move', ghost)
+            self.begin_selection('edit', ghost)
         except Exception as error:
             QMessageBox.warning(self, 'Anteprima', str(error))
 
@@ -553,6 +579,11 @@ class Launcher(QMainWindow):
     def position_from_drag(self, x, y):
         self.offset_x.setValue(x); self.offset_y.setValue(y)
         self.set_status('Posizione aggiornata in anteprima. Premi Applica al desktop per confermare.')
+
+    def appearance_from_editor(self, x, y, scale, angle):
+        self.offset_x.setValue(x); self.offset_y.setValue(y)
+        self.size_slider.setValue(scale); self.rotation_slider.setValue(angle)
+        self.set_status('Modifiche in anteprima. Premi Applica al desktop per confermare.')
 
     def read_presets(self):
         data = model.read(PRESETS, {'version': 1, 'presets': {}})
@@ -586,6 +617,7 @@ class Launcher(QMainWindow):
         if not isinstance(saved, dict):
             QMessageBox.warning(self, 'Preset', 'Il preset non è più disponibile.'); return
         self.draft = {**DEFAULT_APPEARANCE, **saved}
+        self.draft['opacity_percent'] = max(0, min(100, int(self.draft['opacity_percent'])))
         self.show_draft_values()
         self.set_status(f'Preset “{name}” caricato in anteprima. Premi Applica al desktop per confermare.')
 

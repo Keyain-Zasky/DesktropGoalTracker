@@ -271,7 +271,23 @@ class RenderTests(unittest.TestCase):
                 model.save(model.CONFIG, cfg)
                 small = desktop['create_image'](day)
                 self.assertEqual(small.size, (1325, 225))
-                self.assertLess(small.getchannel('A').getextrema()[1], 100)
+                self.assertEqual(small.getchannel('A').getextrema()[1], 128)
+
+    def test_opacity_theme_and_shadow_rendering(self):
+        desktop = runpy.run_path(str(Path(__file__).with_name('desktop.pyw')))
+        cfg = model.config()
+        cfg['appearance'] = {'opacity_percent': 100, 'theme': 'dark'}
+        dark = desktop['create_image'](dt.date(2026, 1, 6), cfg)
+        self.assertEqual(dark.getchannel('A').getextrema()[1], 255)
+        cfg['appearance']['opacity_percent'] = 0
+        invisible = desktop['create_image'](dt.date(2026, 1, 6), cfg)
+        self.assertEqual(invisible.getchannel('A').getextrema()[1], 0)
+        cfg['appearance'].update(opacity_percent=100, theme='light')
+        light = desktop['create_image'](dt.date(2026, 1, 6), cfg)
+        self.assertNotEqual(dark.tobytes(), light.tobytes())
+        cfg['appearance'].update(theme='dark', shadow_enabled=True)
+        shadow = desktop['create_image'](dt.date(2026, 1, 6), cfg)
+        self.assertNotEqual(dark.tobytes(), shadow.tobytes())
 
     def test_strava_local_date_does_not_shift_at_midnight(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(model, 'HERE', Path(directory)):
