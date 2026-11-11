@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+vendor/
+build/
+build-tools/
+dist/
+*.log
+*.lock
+*.json
+!package.json
